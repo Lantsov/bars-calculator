@@ -1,0 +1,229 @@
+<script type="text/javascript">
+  var gk_isXlsx = false;
+  var gk_xlsxFileLookup = {};
+  var gk_fileData = {};
+
+  function filledCell(cell) {
+    return cell !== '' && cell != null;
+  }
+
+  function loadFileData(filename) {
+    if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+      try {
+        var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+        var firstSheetName = workbook.SheetNames[0];
+        var worksheet = workbook.Sheets[firstSheetName];
+        var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+        var filteredData = jsonData.filter(row => row.some(filledCell));
+        var headerRowIndex = filteredData.findIndex((row, index) =>
+          row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length,
+        );
+        if (headerRowIndex === -1 || headerRowIndex > 25) {
+          headerRowIndex = 0;
+        }
+        var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+        csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+        return csv;
+      } catch (e) {
+        console.error(e);
+        return '';
+      }
+    }
+    return gk_fileData[filename] || '';
+  }
+</script><!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>Калькулятор брусков</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+  const { useState, useMemo } = React;
+
+  const App = () => {
+    const [originalLength, setOriginalLength] = useState('');
+    const [pieces, setPieces] = useState([]);
+    const [pieceInput, setPieceInput] = useState({ length: '', quantity: '' });
+    const [result, setResult] = useState(null);
+
+    const addPiece = () => {
+      const { length, quantity } = pieceInput;
+      if (length && quantity && !isNaN(length) && !isNaN(quantity) && quantity > 0) {
+        setPieces([...pieces, { length: parseInt(length), quantity: parseInt(quantity) }]);
+        setPieceInput({ length: '', quantity: '' });
+      }
+    };
+
+    const removePiece = (index) => {
+      setPieces(pieces.filter((_, i) => i !== index));
+      setResult(null);
+    };
+
+    const calculateBars = () => {
+      if (!originalLength || isNaN(originalLength) || originalLength <= 0) {
+        alert('Пожалуйста, введите корректную длину исходного бруска');
+        return;
+      }
+
+      const allPieces = [];
+      pieces.forEach(piece => {
+        if (piece.length > originalLength) {
+          alert(`Длина куска ${piece.length} мм превышает длину бруска (${originalLength} мм)`);
+          return;
+        }
+        for (let i = 0; i < piece.quantity; i++) {
+          allPieces.push(piece.length);
+        }
+      });
+      allPieces.sort((a, b) => b - a);
+
+      const bars = [];
+      allPieces.forEach(piece => {
+        let placed = false;
+        for (let bar of bars) {
+          const currentSum = bar.reduce((sum, p) => sum + p, 0);
+          if (currentSum + piece <= originalLength) {
+            bar.push(piece);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          bars.push([piece]);
+        }
+      });
+
+      setResult(bars);
+    };
+
+    const uniqueSizes = useMemo(() => {
+      const sizes = new Set();
+      pieces.forEach(piece => sizes.add(piece.length));
+      return Array.from(sizes);
+    }, [pieces]);
+
+    const getColorForSize = (size) => {
+      const hue = (size * 137.5) % 360;
+      return `hsl(${hue}, 70%, 50%)`;
+    };
+
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <h1 className="text-3xl font-bold mb-6 text-center">Калькулятор брусков</h1>
+
+        <div className="mb-6">
+          <label className="block mb-2 text-lg">Длина исходного бруска (мм):</label>
+          <input
+            type="number"
+            value={originalLength}
+            onChange={(e) => setOriginalLength(e.target.value)}
+            className="w-full p-2 border rounded"
+            placeholder="Введите длину"
+          />
+        </div>
+
+        <div className="mb-6">
+          <label className="block mb-2 text-lg">Добавить кусок (длина * количество):</label>
+          <div className="flex gap-4 mb-4">
+            <input
+              type="number"
+              placeholder="Длина"
+              value={pieceInput.length}
+              onChange={(e) => setPieceInput({ ...pieceInput, length: e.target.value })}
+              className="w-1/3 p-2 border rounded"
+            />
+            <input
+              type="number"
+              placeholder="Количество"
+              value={pieceInput.quantity}
+              onChange={(e) => setPieceInput({ ...pieceInput, quantity: e.target.value })}
+              className="w-1/3 p-2 border rounded"
+            />
+            <button
+              onClick={addPiece}
+              className="w-1/3 bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+            >
+              Добавить
+            </button>
+          </div>
+          <ul className="list-disc pl-5">
+            {pieces.map((piece, index) => (
+              <li key={index} className="flex justify-between items-center">
+                <span>{piece.length} мм * {piece.quantity}</span>
+                <button
+                  onClick={() => removePiece(index)}
+                  className="text-red-500 hover:text-red-700"
+                  title="Удалить"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <button
+          onClick={calculateBars}
+          className="w-full bg-green-500 text-white p-3 rounded hover:bg-green-600"
+        >
+          Рассчитать
+        </button>
+
+        {result && (
+          <div className="mt-6">
+            <h2 className="text-xl font-semibold mb-4">Результат: {result.length} брусков</h2>
+            <div className="space-y-4">
+              {result.map((bar, index) => (
+                <div key={index} className="flex items-center">
+                  <div className="w-16 text-right pr-4">Брусок {index + 1}:</div>
+                  <div className="flex-grow h-8 flex">
+                    {bar.map((piece, i) => (
+                      <div
+                        key={i}
+                        className="h-full relative group"
+                        style={{
+                          width: `${(piece / originalLength) * 100}%`,
+                          backgroundColor: getColorForSize(piece),
+                        }}
+                      >
+                        <div
+                          className="absolute inset-0 flex items-center justify-center text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                          {piece} мм
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4">
+              <h3 className="text-lg font-semibold">Легенда:</h3>
+              <ul className="flex flex-wrap gap-4">
+                {uniqueSizes.map(size => (
+                  <li key={size} className="flex items-center">
+                    <div
+                      className="w-4 h-4 mr-2"
+                      style={{ backgroundColor: getColorForSize(size) }}
+                    ></div>
+                    <span>{size} мм</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
